@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 import { buildFilter } from './buildFilter';
+import Documentation from './Documentation';
 
 export interface StringIndexedObject<T> {
   [key: string]: T;
@@ -62,9 +63,12 @@ const defaultOptions: ts.CompilerOptions = {
  */
 export function parse(
   filePath: string,
-  parserOpts: ParserOptions = defaultParserOpts
+  parserOpts: ParserOptions = defaultParserOpts,
+  handlers: Function = () => [] /* tslint:disable-line */
 ) {
-  return withCompilerOptions(defaultOptions, parserOpts).parse(filePath);
+  return withCompilerOptions(defaultOptions, parserOpts, handlers).parse(
+    filePath
+  );
 }
 
 /**
@@ -81,11 +85,13 @@ export function withDefaultConfig(
  */
 export function withCustomConfig(
   tsconfigPath: string,
-  parserOpts: ParserOptions
+  parserOpts: ParserOptions,
+  handlers: Function = () => [] /* tslint:disable-line */
 ): FileParser {
   const basePath = path.dirname(tsconfigPath);
-  const { config, error } = ts.readConfigFile(tsconfigPath, filename =>
-    fs.readFileSync(filename, 'utf8')
+  const { config, error } = ts.readConfigFile(
+    tsconfigPath,
+    (filename: string) => fs.readFileSync(filename, 'utf8')
   );
 
   if (error !== undefined) {
@@ -104,7 +110,7 @@ export function withCustomConfig(
     throw errors[0];
   }
 
-  return withCompilerOptions(options, parserOpts);
+  return withCompilerOptions(options, parserOpts, handlers);
 }
 
 /**
@@ -112,7 +118,8 @@ export function withCustomConfig(
  */
 export function withCompilerOptions(
   compilerOptions: ts.CompilerOptions,
-  parserOpts: ParserOptions = defaultParserOpts
+  parserOpts: ParserOptions = defaultParserOpts,
+  handlers: Function = () => [] /* tslint:disable-line */
 ): FileParser {
   return {
     parse(filePath: string): ComponentDoc[] {
@@ -134,7 +141,13 @@ export function withCompilerOptions(
       const exports = checker.getExportsOfModule(moduleSymbol);
 
       const components = exports
-        .map(exp => parser.getComponentInfo(exp, sourceFile))
+        .map(exp =>
+          parser.getComponentInfo(
+            exp,
+            sourceFile,
+            handlers && handlers(filePath)
+          )
+        )
         .filter(comp => comp);
 
       // this should filter out components with the same name as default export
@@ -181,8 +194,9 @@ class Parser {
 
   public getComponentInfo(
     exp: ts.Symbol,
-    source: ts.SourceFile
-  ): ComponentDoc | null {
+    source: ts.SourceFile,
+    handlers?: Function[] /* tslint:disable-line */
+  ): ComponentDoc | null | undefined {
     if (!!exp.declarations && exp.declarations.length === 0) {
       return null;
     }
@@ -220,11 +234,17 @@ class Parser {
         }
       }
 
-      return {
+      const documentation = new Documentation({
         description: this.findDocComment(commentSource).fullComment,
         displayName: componentName,
         props
-      };
+      });
+
+      if (handlers) {
+        handlers.forEach(handler => handler(documentation, exp));
+      }
+
+      return documentation.toObject() as ComponentDoc;
     }
 
     return null;
