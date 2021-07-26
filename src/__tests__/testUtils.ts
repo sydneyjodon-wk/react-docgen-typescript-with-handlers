@@ -1,4 +1,5 @@
 import { assert } from 'chai';
+import { isEqual } from 'lodash';
 import * as path from 'path';
 import {
   ComponentDoc,
@@ -19,7 +20,16 @@ export interface ExpectedProp {
   type: string;
   required?: boolean;
   description?: string;
-  defaultValue?: string;
+  defaultValue?: string | number | boolean | null | undefined;
+  parent?: {
+    name: string;
+    fileName: string;
+  };
+  raw?: string;
+  value?: any;
+  tags?: {
+    [key: string]: string;
+  };
 }
 
 export function fixturePath(componentName: string) {
@@ -38,7 +48,7 @@ export function check(
   componentName: string,
   expected: ExpectedComponents,
   exactProperties: boolean = true,
-  description?: string,
+  description?: string | null,
   parserOpts?: ParserOptions
 ) {
   const result = parse(fixturePath(componentName), parserOpts);
@@ -49,7 +59,7 @@ export function checkComponent(
   actual: ComponentDoc[],
   expected: ExpectedComponents,
   exactProperties: boolean = true,
-  description?: string
+  description?: string | null
 ) {
   const expectedComponentNames = Object.getOwnPropertyNames(expected);
   assert.equal(
@@ -76,15 +86,15 @@ export function checkComponent(
     const propNames = Object.getOwnPropertyNames(componentDoc.props);
     const compName = componentDoc.displayName;
 
-    const expectedComponentDescription =
-      description || `${compName} description`;
+    let expectedComponentDescription = `${compName} description`;
+    if (description !== undefined) {
+      expectedComponentDescription = description || '';
+    }
 
     if (componentDoc.description !== expectedComponentDescription) {
       // tslint:disable-next-line:max-line-length
       errors.push(
-        `${compName} description is different - expected: '${compName} description', actual: '${
-          componentDoc.description
-        }'`
+        `${compName} description is different - expected: '${expectedComponentDescription}', actual: '${componentDoc.description}'`
       );
     }
 
@@ -111,9 +121,7 @@ export function checkComponent(
         if (expectedProp.type !== prop.type.name) {
           // tslint:disable-next-line:max-line-length
           errors.push(
-            `Property '${compName}.${expectedPropName}' type is different - expected: ${
-              expectedProp.type
-            }, actual: ${prop.type.name}`
+            `Property '${compName}.${expectedPropName}' type is different - expected: ${expectedProp.type}, actual: ${prop.type.name}`
           );
         }
         const expectedDescription =
@@ -123,9 +131,20 @@ export function checkComponent(
         if (expectedDescription !== prop.description) {
           errors.push(
             // tslint:disable-next-line:max-line-length
-            `Property '${compName}.${expectedPropName}' description is different - expected: ${expectedDescription}, actual: ${
-              prop.description
-            }`
+            `Property '${compName}.${expectedPropName}' description is different - expected: ${expectedDescription}, actual: ${prop.description}`
+          );
+        }
+        const expectedParentFileName = expectedProp.parent
+          ? expectedProp.parent.fileName
+          : undefined;
+        if (
+          expectedParentFileName &&
+          prop.parent &&
+          expectedParentFileName !== prop.parent.fileName
+        ) {
+          errors.push(
+            // tslint:disable-next-line:max-line-length
+            `Property '${compName}.${expectedPropName}' parent fileName is different - expected: ${expectedParentFileName}, actual: ${prop.parent.fileName}`
           );
         }
         const expectedRequired =
@@ -133,22 +152,45 @@ export function checkComponent(
         if (expectedRequired !== prop.required) {
           errors.push(
             // tslint:disable-next-line:max-line-length
-            `Property '${compName}.${expectedPropName}' required is different - expected: ${expectedRequired}, actual: ${
-              prop.required
-            }`
+            `Property '${compName}.${expectedPropName}' required is different - expected: ${expectedRequired}, actual: ${prop.required}`
           );
         }
         const expectedDefaultValue = expectedProp.defaultValue;
+        const actualDefaultValue = prop.defaultValue
+          ? prop.defaultValue.value
+          : prop.defaultValue;
         if (
           expectedDefaultValue &&
-          prop.defaultValue &&
-          expectedDefaultValue !== prop.defaultValue.value
+          expectedDefaultValue !== actualDefaultValue
         ) {
           errors.push(
             // tslint:disable-next-line:max-line-length
-            `Property '${compName}.${expectedPropName}' defaultValue is different - expected: ${expectedDefaultValue}, actual: ${
-              prop.defaultValue.value
-            }`
+            `Property '${compName}.${expectedPropName}' defaultValue is different - expected: ${expectedDefaultValue}, actual: ${actualDefaultValue}`
+          );
+        }
+        const exptectedRaw = expectedProp.raw;
+        if (exptectedRaw && exptectedRaw !== prop.type.raw) {
+          // tslint:disable-next-line:max-line-length
+          errors.push(
+            `Property '${compName}.${expectedPropName}' raw value is different - expected: ${exptectedRaw}, actual: ${prop.type.raw}`
+          );
+        }
+        const expectedValue = expectedProp.value;
+        if (expectedValue && !isEqual(expectedValue, prop.type.value)) {
+          // tslint:disable-next-line:max-line-length
+          errors.push(
+            `Property '${compName}.${expectedPropName}' value is different - expected: ${JSON.stringify(
+              expectedValue
+            )}, actual: ${JSON.stringify(prop.type.value)}`
+          );
+        }
+        const expectedPropTags = expectedProp.tags;
+        const propTags = prop.tags;
+        if (expectedPropTags && !isEqual(expectedPropTags, propTags)) {
+          errors.push(
+            `Property '${compName}.${expectedPropName}' tags are different - expected: ${JSON.stringify(
+              expectedPropTags
+            )}, actual: ${JSON.stringify(propTags)}`
           );
         }
       }
